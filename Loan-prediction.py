@@ -1,6 +1,7 @@
 import pandas as pd
 from sklearn.preprocessing import LabelEncoder
 from sklearn.preprocessing import StandardScaler
+import matplotlib.pyplot as plt
 
 def load_csv( ):
     df = pd.read_csv( "train.csv" )
@@ -12,6 +13,9 @@ def load_csv( ):
     df = remove_outliers( df, numerical_fields )
     df = hot_encode( df, catagorical_fields )
     df = normalise( df, numerical_fields )
+
+    df[ "LoanAmount" ].hist()
+    plt.show( )
 
     df.to_csv( "train_cleansed.csv" )
 
