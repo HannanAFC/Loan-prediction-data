@@ -1,4 +1,6 @@
 import pandas as pd
+from sklearn.cluster import KMeans
+from sklearn.mixture import GaussianMixture
 from sklearn.preprocessing import LabelEncoder
 from sklearn.preprocessing import StandardScaler
 import matplotlib.pyplot as plt
@@ -13,9 +15,6 @@ def load_csv( ):
     df = remove_outliers( df, numerical_fields )
     df = hot_encode( df, catagorical_fields )
     df = normalise( df, numerical_fields )
-
-    df[ "LoanAmount" ].hist()
-    plt.show( )
 
     df.to_csv( "train_cleansed.csv" )
 
@@ -64,5 +63,104 @@ def normalise( df: pd.DataFrame, numerical_fields: list ):
 
     return df
 
+def general_clean( df ):
+    #Random_state is used to set the seed for the random generator so that we can
+    #ensure that the results that we get can be reproduced.
+    df.sample( 5, random_state=42 )
+    #Since we want to create our own clusters, let’s remove this column along with ID
+    df = df.drop( [ "Loan_ID" ], axis="columns" )
+    df.head( )
+    df.info( )
+    #For the sake of simplicity, we remove all rows with any missing values with
+    df = df.dropna( )
+    df.head( )
+    df.info( )
+    #reset it with df.reset_index(), then remove the freshly created index column
+    df = df.reset_index( )
+    df = df.drop( "index", axis="columns" )
+    df.head( )
+
+    #convert categorical values to numerical data
+    df = pd.get_dummies( df )
+    df.head( )
+    df = pd.get_dummies( df, drop_first=True )
+    df.head( )
+    return df
+
+def kmeans_clustering( file_path ):
+    df = pd.read_csv( file_path )
+    df_kmeans = general_clean( df )
+    #model creastion
+    kmeans_model = KMeans( n_clusters=3 )
+    #data clustering
+    clusters = kmeans_model.fit_predict( df_kmeans )
+
+    #insert the cluster label
+    df_kmeans.insert( df_kmeans.columns.get_loc( "ApplicantIncome" ), "Cluster", clusters )
+    df_kmeans.head( 3 )
+    #cluster labels
+    df_kmeans.Cluster.unique( )
+
+    numeric_cols = [
+            "ApplicantIncome",
+            "CoapplicantIncome",
+            "LoanAmount",
+            "Loan_Amount_Term",
+            "Credit_History"
+        ]
+    print( df_kmeans.groupby( "Cluster" )[ numeric_cols ].mean( ) )
+
+    plt.figure( )
+    plt.scatter(
+        df_kmeans[ "ApplicantIncome" ],
+        df_kmeans[ "LoanAmount" ],
+        c=df_kmeans[ "Cluster" ]
+    )
+    plt.xlabel( "Applicant Income" )
+    plt.ylabel( "Loan Amount" )
+    plt.title( "K-Means Clusters: Income vs Loan Amount" )
+    plt.show( )
+    
+
+def gmm_clustering( file_path ):
+    df = pd.read_csv( file_path )
+    numeric_cols = [
+        "ApplicantIncome",
+        "CoapplicantIncome",
+        "LoanAmount",
+        "Loan_Amount_Term",
+        "Credit_History"
+    ]
+
+    categorical_cols = [
+        "Gender",
+        "Married",
+        "Dependents",
+        "Education",
+        "Self_Employed",
+        "Property_Area"
+    ]
+
+    df = general_clean( df )
+
+    gmm = GaussianMixture( n_components=3, random_state=42 )
+    df[ "GMM_Cluster" ] = gmm.fit_predict( df )
+
+    print( df.groupby( "GMM_Cluster" )[ numeric_cols ].mean( ) )
+
+    plt.figure( )
+    plt.scatter(
+        df[ "ApplicantIncome" ],
+        df[ "LoanAmount" ],
+        c=df[ "GMM_Cluster" ]
+    )
+    plt.xlabel( "Applicant Income" )
+    plt.ylabel( "Loan Amount" )
+    plt.title( "GMM Clusters: Income vs Loan Amount" )
+    plt.show( )
+
+
 if __name__ == "__main__":
     load_csv( )
+    gmm_clustering( "train.csv" )
+    kmeans_clustering( "train.csv" )
