@@ -1,22 +1,19 @@
 import pandas as pd
-from sklearn.cluster import KMeans
-from sklearn.mixture import GaussianMixture
-from sklearn.preprocessing import LabelEncoder
-from sklearn.preprocessing import StandardScaler
-import matplotlib.pyplot as plt
+from IPython.core.display_functions import display
+from sklearn.metrics import accuracy_score
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.preprocessing import LabelEncoder, StandardScaler
+from sklearn.tree import DecisionTreeClassifier,export_graphviz
+from sklearn.model_selection import train_test_split
+from sklearn import metrics
+from six import StringIO  
+from IPython.display import Image  
+import pydotplus
+import graphviz
 
-def load_csv( ):
-    df = pd.read_csv( "train.csv" )
-
-    catagorical_fields = [ "Gender", "Dependents", "Married", "Education", "Self_Employed", "Credit_History", "Property_Area", "Loan_Status" ]
-    numerical_fields = [ "ApplicantIncome", "CoapplicantIncome", "LoanAmount", "Loan_Amount_Term" ]
-
-    df = replace_missing_data( df, catagorical_fields, numerical_fields )
-    df = remove_outliers( df, numerical_fields )
-    df = hot_encode( df, catagorical_fields )
-    df = normalise( df, numerical_fields )
-
-    df.to_csv( "train_cleansed.csv" )
+def load_csv( file_path ):
+    df = pd.read_csv( file_path )
+    return df
 
 def replace_missing_data( df: pd.DataFrame, catagorical_fields: list, numerical_fields: list ):
     #replace missing values for catagorical fields
@@ -63,104 +60,80 @@ def normalise( df: pd.DataFrame, numerical_fields: list ):
 
     return df
 
-def general_clean( df ):
-    #Random_state is used to set the seed for the random generator so that we can
-    #ensure that the results that we get can be reproduced.
-    df.sample( 5, random_state=42 )
-    #Since we want to create our own clusters, let’s remove this column along with ID
-    df = df.drop( [ "Loan_ID" ], axis="columns" )
-    df.head( )
-    df.info( )
-    #For the sake of simplicity, we remove all rows with any missing values with
-    df = df.dropna( )
-    df.head( )
-    df.info( )
-    #reset it with df.reset_index(), then remove the freshly created index column
-    df = df.reset_index( )
-    df = df.drop( "index", axis="columns" )
-    df.head( )
+def cleanse_data( df: pd.DataFrame ):
+    catagorical_fields = [ "Gender", "Dependents", "Married", "Education", "Self_Employed", "Credit_History", "Property_Area", "Loan_Status" ]
+    numerical_fields = [ "ApplicantIncome", "CoapplicantIncome", "LoanAmount", "Loan_Amount_Term" ]
 
-    #convert categorical values to numerical data
-    df = pd.get_dummies( df )
-    df.head( )
-    df = pd.get_dummies( df, drop_first=True )
-    df.head( )
-    return df
+    df = replace_missing_data( df, catagorical_fields, numerical_fields )
+    df = remove_outliers( df, numerical_fields )
+    df = hot_encode( df, catagorical_fields )
+    df = normalise( df, numerical_fields )
 
-def kmeans_clustering( file_path ):
-    df = pd.read_csv( file_path )
-    df_kmeans = general_clean( df )
-    #model creastion
-    kmeans_model = KMeans( n_clusters=3 )
-    #data clustering
-    clusters = kmeans_model.fit_predict( df_kmeans )
+    df.to_csv( "train_cleansed.csv", index=False )
 
-    #insert the cluster label
-    df_kmeans.insert( df_kmeans.columns.get_loc( "ApplicantIncome" ), "Cluster", clusters )
-    df_kmeans.head( 3 )
-    #cluster labels
-    df_kmeans.Cluster.unique( )
+def decision_tree( df: pd.DataFrame ):
+    df = df.drop( columns="Loan_ID", axis=1 )
+    feature_columns = list( df.drop( columns="Loan_Status", axis=1 ).columns.values )
+    #feature columns
+    X = df[ feature_columns ]
+    #target column
+    y = df.Loan_Status
 
-    numeric_cols = [
-            "ApplicantIncome",
-            "CoapplicantIncome",
-            "LoanAmount",
-            "Loan_Amount_Term",
-            "Credit_History"
-        ]
-    print( df_kmeans.groupby( "Cluster" )[ numeric_cols ].mean( ) )
+    #split into training and test data sets, 30% testing size
+    X_train, X_test, y_train, y_test = train_test_split( X, y, test_size=0.3, random_state=1 )
+    clf = DecisionTreeClassifier( )
+    clf = clf.fit( X_train,y_train )
+    y_pred = clf.predict( X_test )
+    print( "Accuracy:", metrics.accuracy_score( y_test, y_pred ) )
 
-    plt.figure( )
-    plt.scatter(
-        df_kmeans[ "ApplicantIncome" ],
-        df_kmeans[ "LoanAmount" ],
-        c=df_kmeans[ "Cluster" ]
+    dot_data = StringIO( )
+
+    export_graphviz(
+        clf, out_file=dot_data,
+        filled=True, rounded=True,
+        special_characters=True,feature_names = feature_columns,class_names=[ "0","1" ]
     )
-    plt.xlabel( "Applicant Income" )
-    plt.ylabel( "Loan Amount" )
-    plt.title( "K-Means Clusters: Income vs Loan Amount" )
-    plt.show( )
+
+    graph = pydotplus.graph_from_dot_data( dot_data.getvalue( ) )  
+    graph.write_png( "loan_prediction_dt.png" )
+    Image( graph.create_png( ) )
     
 
-def gmm_clustering( file_path ):
-    df = pd.read_csv( file_path )
-    numeric_cols = [
-        "ApplicantIncome",
-        "CoapplicantIncome",
-        "LoanAmount",
-        "Loan_Amount_Term",
-        "Credit_History"
-    ]
+def random_forest( df: pd.DataFrame ):
+    df = df.drop( columns=[ "Loan_ID" ] )
+    
+    #X for features, y for target
+    X = df.drop( "Loan_Status", axis=1 )
+    y = df[ "Loan_Status" ]
 
-    categorical_cols = [
-        "Gender",
-        "Married",
-        "Dependents",
-        "Education",
-        "Self_Employed",
-        "Property_Area"
-    ]
+    #split into training and test data sets, 20% testing size
+    X_train, X_test, y_train, y_test = train_test_split( X, y, test_size=0.2, random_state=42, stratify=y )
 
-    df = general_clean( df )
+    rf = RandomForestClassifier( )
+    rf.fit( X_train, y_train )
 
-    gmm = GaussianMixture( n_components=3, random_state=42 )
-    df[ "GMM_Cluster" ] = gmm.fit_predict( df )
+    y_pred = rf.predict( X_test )
 
-    print( df.groupby( "GMM_Cluster" )[ numeric_cols ].mean( ) )
+    accuracy = accuracy_score( y_test, y_pred )
+    print( "Accuracy:", accuracy )
 
-    plt.figure( )
-    plt.scatter(
-        df[ "ApplicantIncome" ],
-        df[ "LoanAmount" ],
-        c=df[ "GMM_Cluster" ]
-    )
-    plt.xlabel( "Applicant Income" )
-    plt.ylabel( "Loan Amount" )
-    plt.title( "GMM Clusters: Income vs Loan Amount" )
-    plt.show( )
-
+    #export first three decision trees
+    for i in range( 3 ):
+        tree = rf.estimators_[ i ]
+        dot_data = export_graphviz(
+            tree,
+            feature_names=X_train.columns,
+            filled=True,
+            max_depth=3,
+            impurity=False,
+            proportion=True
+        )
+        graph = graphviz.Source(dot_data)
+        graph.render( "Loan_Prediction_Random_Forest", format="png", cleanup=True )
 
 if __name__ == "__main__":
-    load_csv( )
-    gmm_clustering( "train.csv" )
-    kmeans_clustering( "train.csv" )
+    df = load_csv( "train.csv"  )
+    cleanse_data( df )
+    df = load_csv( "train_cleansed.csv" )
+    decision_tree( df )
+    random_forest( df )
